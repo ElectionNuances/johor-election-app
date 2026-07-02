@@ -1,0 +1,71 @@
+{
+ "accepted": 165,
+ "ambiguous_skipped": [
+  {
+   "uid": "6TFZW",
+   "name": "Ahmad bin Abdullah",
+   "qids": [
+    "Q12682110",
+    "Q4695227"
+   ],
+   "reason": "one name, several Wikidata people"
+  },
+  {
+   "uid": "JCG62",
+   "name": "Ismail bin Mohamed",
+   "qids": [
+    "Q102198276",
+    "Q116257254",
+    "Q97610130"
+   ],
+   "reason": "one name, several Wikidata people"
+  },
+  {
+   "uid": "4AQHC",
+   "name": "Harun bin Abdullah",
+   "qids": [
+    "Q10921889",
+    "Q12687557"
+   ],
+   "reason": "one name, several Wikidata people"
+  },
+  {
+   "uid": "MNR1Q",
+   "name": "Dzulkefly bin Ahmad",
+   "qids": [
+    "Q12685939",
+    "Q5320031"
+   ],
+   "reason": "one name, several Wikidata people"
+  },
+  {
+   "uid": "049M5",
+   "name": "Chew Chong Sin",
+   "qids": [
+    "Q51884874",
+    "Q65220833"
+   ],
+   "reason": "one name, several Wikidata people"
+  },
+  {
+   "uid": "WM6CN",
+   "name": "Suhaimi bin Salleh",
+   "qids": [
+    "Q111026073",
+    "Q125966803"
+   ],
+   "reason": "one name, several Wikidata people"
+  },
+  {
+   "uid": "K1408",
+   "name": "Zainal Abidin bin Osman",
+   "qids": [
+    "Q10894921",
+    "Q136141613"
+   ],
+   "reason": "one name, several Wikidata people"
+  }
+ ],
+ "no_match": 169,
+ "searched": 341
+}

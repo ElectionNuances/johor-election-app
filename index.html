@@ -192,6 +192,30 @@
   .apinote{background:#f7f8fa; border:1px solid var(--line); border-radius:8px; padding:10px 12px;
     font-size:11.5px; color:var(--muted); margin-bottom:10px}
 
+  /* ---------- Candidate profile ---------- */
+  .cand-click{cursor:pointer}
+  .cand-click:hover .nm{text-decoration:underline}
+  .profile-ext{background:#f7f8fa; border:1px solid var(--line); border-radius:9px; padding:12px 14px; margin:14px 0}
+  .profile-ext h4{margin:0 0 6px; font-size:12.5px}
+  .profile-ext ul{margin:4px 0; padding-left:18px; font-size:12.5px; line-height:1.6}
+  .provenance{font-size:10.5px; color:var(--muted); margin-top:8px}
+  .switchline{font-size:12.5px; margin:10px 0; line-height:1.7}
+  .switchline .arrow{color:var(--muted)}
+
+  /* ---------- Community forecast ---------- */
+  .fc-banner{background:#fff7ed; border:1px solid #fdba74; color:#9a3412; border-radius:8px;
+    padding:7px 12px; font-size:11.5px; margin-bottom:10px; line-height:1.5}
+  .predict-row{display:flex; gap:6px; flex-wrap:wrap; margin:10px 0}
+  .predict-row button{border:1.5px solid var(--line); background:#fff; border-radius:8px;
+    padding:7px 13px; font-size:12.5px; font-weight:700; cursor:pointer; color:#374151}
+  .predict-row button:hover:not(:disabled){border-color:#9ca3af}
+  .predict-row button.mine{color:#fff; border-color:transparent}
+  .predict-row button:disabled{cursor:default; opacity:.55}
+  .fc-split{display:flex; height:20px; border-radius:6px; overflow:hidden; margin:8px 0; border:1px solid var(--line)}
+  .fc-split .seg{display:flex; align-items:center; justify-content:center; color:#fff;
+    font-size:10px; font-weight:700; min-width:0; overflow:hidden}
+  .fc-n{font-size:11px; color:var(--muted)}
+
   /* ---------- Footer / states ---------- */
   footer.credit{background:var(--header); color:#9aa2b1; font-size:11px; padding:7px 18px; text-align:center}
   footer.credit a{color:#c7ccd6}
@@ -228,10 +252,16 @@ const {useState, useEffect, useMemo, useRef, useCallback} = React;
    labels in ./data/coalition_labels.json, then to bare codes. */
 const API_BASE = "";
 
-const CSV_URL    = "./data/ballots_jhr.csv";
-const NEWS_URL   = "./data/news_index.json";
-const LABELS_URL = "./data/coalition_labels.json";
-const META_URL   = "./data/meta.json";
+const CSV_URL      = "./data/ballots_jhr.csv";
+const NEWS_URL     = "./data/news_index.json";
+const LABELS_URL   = "./data/coalition_labels.json";
+const META_URL     = "./data/meta.json";
+const PROFILES_URL = "./data/candidate_profiles.json";   // lazy-loaded on first profile click
+
+/* Community forecast: coalition-per-seat predictions for the pending election
+   ONLY. Deliberately never rates named candidates. */
+const FORECAST_COALS = ["BN", "PH", "PN", "ALONE", "OTHER"];
+const FORECAST_DISCLAIMER = "Unofficial community forecast — self-selected visitors, not a survey; no methodological weight.";
 
 /* ============================================================
    COLOUR SYSTEM — colours only. Coalition *names* come from
@@ -309,6 +339,7 @@ function cleanRows(raw){
         seat_name: name,
         seat_key: norm(name),
         ballot_order: toInt(r.ballot_order),
+        uid: (r.candidate_uid || "").trim(),
         candidate: (r.name || r.name_on_ballot || "").trim(),
         sex: r.sex || null,
         ethnicity: r.ethnicity && r.ethnicity.trim() ? r.ethnicity.trim() : null,
@@ -454,7 +485,15 @@ function hexPoints(cx,cy){
    ============================================================ */
 function fmt(n){ return (n||0).toLocaleString("en-US"); }
 
-function HexMap({election, seatsMap, view, pinned, newsSeats, onHover, onLeave, onPin}){
+/* Leading coalition + its share for a seat's forecast counts. */
+function forecastLead(counts){
+  if(!counts) return null;
+  let total=0, best=null, bestN=0;
+  for(const c in counts){ total+=counts[c]; if(counts[c]>bestN){ bestN=counts[c]; best=c; } }
+  return total ? {coalition:best, share:bestN/total, n:total} : null;
+}
+
+function HexMap({election, seatsMap, view, pinned, newsSeats, forecast, onHover, onLeave, onPin}){
   const nameOf = useNameOf();
   const seats = useMemo(
     ()=> [...seatsMap.values()].sort((a,b)=> a.code.localeCompare(b.code, undefined, {numeric:true})),
@@ -463,7 +502,13 @@ function HexMap({election, seatsMap, view, pinned, newsSeats, onHover, onLeave, 
   const {positions, viewBox} = useMemo(()=>layoutSeats(seats), [seats]);
 
   const fillFor = (s) => {
-    if(election.pending || !s.winner) return NEUTRAL;
+    if(election.pending){
+      if(view!=="forecast" || !forecast) return NEUTRAL;
+      const lead = forecastLead(forecast.seats[s.code]);
+      if(!lead) return NEUTRAL;
+      return mix("#eef1f5", coalColour(lead.coalition), 0.30 + 0.70*lead.share);
+    }
+    if(!s.winner) return NEUTRAL;
     const co = s.winner.coalition;
     return view==="margin" ? marginFill(co, s.marginPct, s.uncontested) : coalColour(co);
   };
@@ -503,15 +548,25 @@ function HexMap({election, seatsMap, view, pinned, newsSeats, onHover, onLeave, 
   );
 }
 
-function Tooltip({data}){
+function Tooltip({data, forecast}){
   const nameOf = useNameOf();
   if(!data) return null;
   const {x,y,seat} = data;
   const w = seat.winner;
   const style = {left: Math.min(x+16, window.innerWidth-244), top: Math.min(y+16, window.innerHeight-150)};
+  const fcCounts = (!w && forecast) ? forecast.seats[seat.code] : null;
+  const fcLead = forecastLead(fcCounts);
   return (
     <div className="tip" style={style}>
       <div className="tname">{seat.code} · {seat.name}</div>
+      {!w && fcLead && (
+        <>
+          {Object.entries(fcCounts).sort((a,b)=>b[1]-a[1]).map(([co,n])=>(
+            <div className="trow" key={co}><span>{co}</span><b>{Math.round(n/fcLead.n*100)}% ({n})</b></div>
+          ))}
+          <div style={{color:"#9aa2b1",fontSize:10.5,marginTop:3}}>community forecast · n={fcLead.n} · unofficial</div>
+        </>
+      )}
       {w ? (
         <>
           <div style={{margin:"3px 0"}}>
@@ -524,7 +579,7 @@ function Tooltip({data}){
           <div className="trow"><span>Votes</span><b>{fmt(w.votes)} ({w.votes_perc.toFixed(1)}%)</b></div>
           <div className="trow"><span>Margin</span><b>{seat.uncontested ? "uncontested" : fmt(seat.margin)+" ("+seat.marginPct.toFixed(1)+"%)"}</b></div>
         </>
-      ) : <div style={{color:"#c7ccd6"}}>Results pending</div>}
+      ) : (!fcLead && <div style={{color:"#c7ccd6"}}>Results pending — no predictions yet</div>)}
     </div>
   );
 }
@@ -590,7 +645,7 @@ function resultBadge(res){
   return <span className="badge lost">lost</span>;
 }
 
-function SeatDetail({seat, election, elections, timeline}){
+function SeatDetail({seat, election, elections, timeline, onCandidate, predictUI}){
   const nameOf = useNameOf();
   return (
     <div>
@@ -599,12 +654,15 @@ function SeatDetail({seat, election, elections, timeline}){
         {election.code} · {election.year}
         {seat.uncontested ? " · uncontested" : (seat.winner ? " · margin "+fmt(seat.margin)+" ("+seat.marginPct.toFixed(1)+"%)" : " · pending")}
       </div>
+      {predictUI}
       <table className="ballot">
         <thead><tr><th>Candidate</th><th>Coalition</th><th className="num">Votes</th><th className="num">%</th><th></th></tr></thead>
         <tbody>
           {seat.ballot.map((r,i)=>(
             <tr key={i} className={r.result==="won"||r.result==="won_uncontested"?"win":""}>
-              <td className="cand">
+              <td className={"cand"+(r.uid?" cand-click":"")}
+                  onClick={()=> r.uid && onCandidate(r.uid)}
+                  title={r.uid ? "view candidate profile" : undefined}>
                 <div className="nm">{r.candidate||"—"}</div>
                 <div className="meta">{r.party||"—"} · {r.sex||"—"} · {r.age!=null?r.age:"—"} · {r.ethnicity||"—"}</div>
               </td>
@@ -633,6 +691,169 @@ function SeatDetail({seat, election, elections, timeline}){
       </div>
       <div style={{fontSize:11,color:"var(--muted)",marginTop:10}}>
         Timeline matches seats by name, so it spans redelineations where the name persisted.
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Candidate profile (Phase 4) ---------------- */
+function CandidateProfile({profile, news, onBack}){
+  const p = profile;
+  const cs = p.career_stats;
+  const ext = p.external;
+  return (
+    <div>
+      <button className="backbtn" onClick={onBack}>← Back to ballot</button>
+      <h2>{p.name}</h2>
+      <div className="sub">{p.sex||"—"} · {p.ethnicity||"—"} · active {cs.first_year}–{cs.last_year}</div>
+
+      <div className="stats">
+        <div className="stat"><div className="n">{cs.contested}</div><div className="l">elections contested</div></div>
+        <div className="stat"><div className="n">{cs.wins}</div><div className="l">wins</div></div>
+        <div className="stat"><div className="n">{cs.lost_deposits}</div><div className="l">lost deposits</div></div>
+        <div className="stat"><div className="n">{cs.best_share!=null ? cs.best_share.toFixed(1)+"%" : "—"}</div><div className="l">best vote share</div></div>
+      </div>
+
+      {cs.seats_held.length>0 && (
+        <div className="switchline">
+          <b>Seats held:</b>{" "}
+          {cs.seats_held.map((s,i)=>(
+            <span key={i}>{s.seat} ({s.from_year}{s.to_year!==s.from_year?"–"+s.to_year:""}, {s.terms} term{s.terms>1?"s":""}){i<cs.seats_held.length-1?"; ":""}</span>
+          ))}
+        </div>
+      )}
+      {p.party_switches.length>0 && (
+        <div className="switchline">
+          <b>Party changes:</b>{" "}
+          {p.party_switches.map((s,i)=>(
+            <span key={i}>{s.from} <span className="arrow">→</span> {s.to} <span className="arrow">({s.between[1]})</span>{i<p.party_switches.length-1?"; ":""}</span>
+          ))}
+        </div>
+      )}
+
+      <div className="tl-title">Contest history</div>
+      <table className="ballot">
+        <thead><tr><th>Election</th><th>Seat</th><th>Party</th><th className="num">Votes</th><th className="num">%</th><th></th></tr></thead>
+        <tbody>
+          {p.contests.map((c,i)=>(
+            <tr key={i} className={c.result==="won"||c.result==="won_uncontested"?"win":""}>
+              <td>{c.election}<div className="cand"><span className="meta">{c.year}</span></div></td>
+              <td>{c.seat}</td>
+              <td><span className="cochip" style={{background:coalColour(c.coalition)}}>{c.party||c.coalition||"—"}</span></td>
+              <td className="num">{fmt(c.votes)}</td>
+              <td className="num">{c.perc.toFixed(1)}</td>
+              <td>{resultBadge(c.result)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {ext && (
+        <div className="profile-ext">
+          <h4>Public offices &amp; records</h4>
+          {ext.positions && ext.positions.length>0 && (
+            <ul>
+              {ext.positions.map((pos,i)=>(
+                <li key={i}>{pos.label}{pos.from ? ` (${pos.from}${pos.to?"–"+pos.to:"–"})` : ""}</li>
+              ))}
+            </ul>
+          )}
+          {ext.birth_year && <div style={{fontSize:12.5}}>Born: {ext.birth_year}</div>}
+          {ext.parties && ext.parties.length>0 && <div style={{fontSize:12.5}}>Party record (Wikidata): {ext.parties.join(", ")}</div>}
+          <div style={{marginTop:6, fontSize:12.5}}>
+            {ext.wikipedia && ext.wikipedia.en && <a href={ext.wikipedia.en} target="_blank" rel="noopener noreferrer">Wikipedia (EN)</a>}
+            {ext.wikipedia && ext.wikipedia.en && ext.wikipedia.ms && " · "}
+            {ext.wikipedia && ext.wikipedia.ms && <a href={ext.wikipedia.ms} target="_blank" rel="noopener noreferrer">Wikipedia (MS)</a>}
+          </div>
+          <div className="provenance">
+            Source: Wikidata <a href={"https://www.wikidata.org/wiki/"+ext.wikidata_qid} target="_blank" rel="noopener noreferrer">{ext.wikidata_qid}</a> — structured public-role claims only. {ext.verified}
+          </div>
+        </div>
+      )}
+      {!ext && (
+        <div style={{fontSize:11.5,color:"var(--muted)",margin:"12px 0"}}>
+          No verified external records — profile shows election data (MECo) only. Missing means unverified, not nonexistent.
+        </div>
+      )}
+
+      {p.news_refs.length>0 && (
+        <>
+          <div className="tl-title">In the news index</div>
+          {p.news_refs.map(i => news[i] ? <NewsRow key={i} r={news[i]}/> : null)}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Community forecast (Phase 5) ---------------- */
+function PredictButtons({seat, forecast, mine, onPredict}){
+  const counts = forecast ? forecast.seats[seat.code] : null;
+  const lead = forecastLead(counts);
+  return (
+    <div style={{marginBottom:14}}>
+      <div className="fc-banner">⚠ {FORECAST_DISCLAIMER}</div>
+      <div style={{fontSize:12.5, fontWeight:700}}>Your prediction for {seat.code} — which coalition wins?</div>
+      <div className="predict-row">
+        {FORECAST_COALS.map(co=>(
+          <button key={co} disabled={!!mine}
+                  className={mine===co ? "mine" : ""}
+                  style={mine===co ? {background:coalColour(co)} : {}}
+                  onClick={()=>onPredict(seat.code, co)}>
+            {co}{mine===co ? " ✓" : ""}
+          </button>
+        ))}
+      </div>
+      {mine && <div className="fc-n">You predicted <b>{mine}</b> for this seat (one prediction per seat per browser).</div>}
+      {lead && (
+        <>
+          <div className="fc-split" aria-label="community prediction split">
+            {Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([co,n])=>(
+              <div className="seg" key={co} style={{width:(n/lead.n*100)+"%", background:coalColour(co)}}
+                   title={co+": "+n}>{n/lead.n>0.14 ? co : ""}</div>
+            ))}
+          </div>
+          <div className="fc-n">{lead.n} prediction{lead.n!==1?"s":""} for this seat so far.</div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ForecastSummary({forecast, seatsMap}){
+  const seatCodes = [...seatsMap.keys()];
+  const led = {};
+  let predicted=0;
+  for(const code of seatCodes){
+    const lead = forecastLead(forecast && forecast.seats[code]);
+    if(lead){ led[lead.coalition]=(led[lead.coalition]||0)+1; predicted++; }
+  }
+  const sorted = Object.entries(led).sort((a,b)=>b[1]-a[1]);
+  const maxLed = Math.max(1, ...sorted.map(s=>s[1]));
+  return (
+    <div>
+      <div className="fc-banner">⚠ {FORECAST_DISCLAIMER}</div>
+      {!forecast || forecast.n===0 ? (
+        <div className="empty">No community predictions yet.<br/>
+          <span style={{fontSize:11}}>Click a seat on the map to cast the first prediction for it.</span></div>
+      ) : (
+        <>
+          <div style={{fontSize:12.5, fontWeight:700, margin:"4px 0 8px"}}>Seats led in community predictions</div>
+          {sorted.map(([co,cnt])=>(
+            <div className="barrow" key={co}>
+              <span className="co">{co}</span>
+              <div className="track"><div className="fill" style={{width:(cnt/maxLed*100)+"%", background:coalColour(co)}}/></div>
+              <span className="cnt">{cnt}</span>
+            </div>
+          ))}
+          <div className="stats">
+            <div className="stat"><div className="n">{forecast.n}</div><div className="l">total predictions</div></div>
+            <div className="stat"><div className="n">{predicted}/{seatCodes.length}</div><div className="l">seats with predictions</div></div>
+          </div>
+        </>
+      )}
+      <div style={{fontSize:11,color:"var(--muted)",marginTop:10}}>
+        Predictions are per coalition only — this app deliberately does not rate individual candidates.
       </div>
     </div>
   );
@@ -737,6 +958,20 @@ function About({meta, newsCount, labels}){
         Dead links are served via their archive URL and marked 🗄. Gaps (especially pre-2008) are shown honestly
         rather than padded. Currently indexed: <b>{newsCount}</b> links.
       </p>
+      <h3>Candidate profiles</h3>
+      <p>
+        Click any candidate on a ballot to open their profile. Contest history and career statistics
+        are computed purely from the MECo results data. Where shown, "Public offices &amp; records"
+        come from <b>structured Wikidata claims only</b> (positions held, party record, birth year),
+        each linked to its Wikidata item — matched conservatively and skipped when ambiguous.
+        A profile without external records means <i>unverified</i>, not <i>nonexistent</i>.
+      </p>
+      <h3>Community forecast</h3>
+      <p>
+        For the pending election, visitors can predict the winning <b>coalition per seat</b>.
+        {" "}{FORECAST_DISCLAIMER} Predictions are rate-limited per visitor. This app deliberately
+        does <b>not</b> collect approval ratings or votes on individual named candidates.
+      </p>
       <h3>Data sync</h3>
       <p>Last synced: <b>{(meta && meta.last_synced) || "—"}</b>
         {meta && meta.news_frozen ? <> · news index frozen: <b>{meta.news_frozen}</b></> : null}</p>
@@ -830,6 +1065,48 @@ function App(){
   const [news, setNews] = useState([]);
   const [meta, setMeta] = useState(null);
   const [staticLabels, setStaticLabels] = useState({});
+
+  // ---- candidate profiles (lazy-loaded on first click) ----
+  const [profiles, setProfiles] = useState(null);       // null=not loaded, {}=failed
+  const [profileUid, setProfileUid] = useState(null);
+  const openProfile = useCallback((uid)=>{
+    setProfileUid(uid);
+    if(profiles===null){
+      fetch(PROFILES_URL).then(r=>r.ok?r.json():{}).then(setProfiles).catch(()=>setProfiles({}));
+    }
+  }, [profiles]);
+
+  // ---- community forecast (SE-16 predictions; needs the API) ----
+  const [forecast, setForecast] = useState(null);
+  const [forecastAvailable, setForecastAvailable] = useState(false);
+  const [myPreds, setMyPreds] = useState(()=>{
+    try { return JSON.parse(localStorage.getItem("jhr_predictions") || "{}"); }
+    catch { return {}; }
+  });
+  useEffect(()=>{
+    let alive=true;
+    fetch(API_BASE + "/api/forecast")
+      .then(r=>{ if(!r.ok) throw new Error(); return r.json(); })
+      .then(fc=>{ if(alive){ setForecast(fc); setForecastAvailable(true); } })
+      .catch(()=>{ if(alive) setForecastAvailable(false); });
+    return ()=>{ alive=false; };
+  }, []);
+  const predict = useCallback(async (seatCode, coalition)=>{
+    if(myPreds[seatCode]) return;                        // one per seat per browser
+    try {
+      const r = await fetch(API_BASE + "/api/predict", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({seat:seatCode, coalition})});
+      if(!r.ok) return;
+      await r.json();
+      const next = {...myPreds, [seatCode]: coalition};
+      setMyPreds(next);
+      try { localStorage.setItem("jhr_predictions", JSON.stringify(next)); } catch {}
+      // refresh aggregate
+      const fr = await fetch(API_BASE + "/api/forecast");
+      if(fr.ok) setForecast(await fr.json());
+    } catch {}
+  }, [myPreds]);
 
   // ---- crowd-sourced coalition labels (external API, graceful fallback) ----
   const [tags, setTags] = useState({});
@@ -945,6 +1222,14 @@ function App(){
   const seatsMap = model ? model.byElection[election.code].seats : new Map();
   const pinnedSeat = (pinned && seatsMap.has(pinned)) ? seatsMap.get(pinned) : null;
 
+  // pending election defaults to the Forecast view (when API is up);
+  // leaving it restores Winner view.
+  useEffect(()=>{
+    if(!election) return;
+    if(election.pending && forecastAvailable) setView("forecast");
+    else if(!election.pending) setView(v => v==="forecast" ? "winner" : v);
+  }, [election && election.code, forecastAvailable]);
+
   // seats with seat-tagged news for the selected election (for map dots)
   const newsSeats = useMemo(()=>{
     if(!model) return new Set();
@@ -960,8 +1245,8 @@ function App(){
 
   const onHover = useCallback((e, seat)=> setTip({x:e.clientX, y:e.clientY, seat}), []);
   const onLeave = useCallback(()=> setTip(null), []);
-  const onPin   = useCallback((code)=> setPinned(p => p===code ? null : code), []);
-  const step    = (d)=> { setPlaying(false); setIdx(i=> Math.max(0, Math.min(elections.length-1, i+d))); };
+  const onPin   = useCallback((code)=>{ setProfileUid(null); setPinned(p => p===code ? null : code); }, []);
+  const step    = (d)=> { setPlaying(false); setProfileUid(null); setIdx(i=> Math.max(0, Math.min(elections.length-1, i+d))); };
 
   if(status==="loading")
     return <div className="center-state"><div className="spinner"/><div>Loading Johor DUN results…</div></div>;
@@ -991,6 +1276,8 @@ function App(){
         <div className="seg" role="group" aria-label="map view">
           <button className={view==="winner"?"on":""} onClick={()=>setView("winner")}>Winner</button>
           <button className={view==="margin"?"on":""} onClick={()=>setView("margin")}>Margin</button>
+          {election.pending && forecastAvailable &&
+            <button className={view==="forecast"?"on":""} onClick={()=>setView("forecast")}>Forecast</button>}
         </div>
 
         <button className={"play"+(playing?" on":"")} onClick={()=>setPlaying(p=>!p)}
@@ -1004,11 +1291,17 @@ function App(){
       <div className="main">
         <div className="mapwrap">
           <div className="maptitle">
-            <span>{election.pending ? "Results pending" : decidedLabel} — one hex ≈ one seat, ordered north→south</span>
+            <span>{election.pending
+              ? (view==="forecast" ? "Community forecast (unofficial)" : "Results pending")
+              : decidedLabel} — one hex ≈ one seat, ordered north→south</span>
             <span>{seatsMap.size} seats</span>
           </div>
-          {election.pending && <div className="pending-note">⏳ {election.year} — results pending</div>}
+          {election.pending && view!=="forecast" &&
+            <div className="pending-note">⏳ {election.year} — results pending</div>}
+          {election.pending && view==="forecast" &&
+            <div className="pending-note" title={FORECAST_DISCLAIMER}>🔮 {election.year} — unofficial community forecast, not a survey</div>}
           <HexMap election={election} seatsMap={seatsMap} view={view} newsSeats={newsSeats}
+                  forecast={election.pending ? forecast : null}
                   pinned={pinned} onHover={onHover} onLeave={onLeave} onPin={onPin}/>
         </div>
 
@@ -1025,9 +1318,19 @@ function App(){
             <button role="tab" aria-selected={tab==="about"} className={tab==="about"?"on":""} onClick={()=>setTab("about")}>About</button>
           </div>
 
-          {tab==="results" && (pinnedSeat
-            ? <SeatDetail seat={pinnedSeat} election={election} elections={elections} timeline={model.timeline}/>
-            : <Statewide election={election} summary={model.summary[election.code]} view={view} coalitions={model.coalitions}/>)}
+          {tab==="results" && profileUid && profiles && profiles[profileUid]
+            ? <CandidateProfile profile={profiles[profileUid]} news={news} onBack={()=>setProfileUid(null)}/>
+            : tab==="results" && profileUid && profiles===null
+            ? <div className="center-state" style={{height:"auto",padding:30}}><div className="spinner"/><div>Loading profiles…</div></div>
+            : tab==="results" && (pinnedSeat
+              ? <SeatDetail seat={pinnedSeat} election={election} elections={elections} timeline={model.timeline}
+                  onCandidate={openProfile}
+                  predictUI={election.pending && forecastAvailable
+                    ? <PredictButtons seat={pinnedSeat} forecast={forecast} mine={myPreds[pinnedSeat.code]} onPredict={predict}/>
+                    : null}/>
+              : (election.pending && forecastAvailable
+                ? <ForecastSummary forecast={forecast} seatsMap={seatsMap}/>
+                : <Statewide election={election} summary={model.summary[election.code]} view={view} coalitions={model.coalitions}/>))}
           {tab==="coverage" && <Coverage election={election} news={news} pinnedSeat={pinnedSeat}/>}
           {tab==="about" && <About meta={meta} newsCount={news.length} labels={labels}/>}
         </div>
@@ -1039,7 +1342,7 @@ function App(){
         · News titles via page <code>&lt;title&gt;</code> tags &amp; Wayback Machine.
       </footer>
 
-      <Tooltip data={tip}/>
+      <Tooltip data={tip} forecast={election.pending && view==="forecast" ? forecast : null}/>
     </div>
    </NamesContext.Provider>
   );

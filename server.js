@@ -111,6 +111,31 @@ async function handleVote(req, res){
   send(res, 200, { code, tags: store[code] });
 }
 
+/* ---- community forecast (SE-16 seat predictions, local mirror) ---- */
+const FORECAST_FILE = path.join(ROOT, "forecast.json");
+const SEAT_RE = /^N\.(\d{2})$/;
+const SEAT_MAX = 56;
+const FORECAST_COALS = ["BN", "PH", "PN", "ALONE", "OTHER"];
+let forecast = (() => {
+  try { return JSON.parse(fs.readFileSync(FORECAST_FILE, "utf8")); }
+  catch { return { seats: {}, n: 0 }; }
+})();
+
+async function handlePredict(req, res){
+  const body = await readBody(req);
+  const { seat, coalition } = body;
+  const m = SEAT_RE.exec(seat || "");
+  if (!m || +m[1] < 1 || +m[1] > SEAT_MAX) return send(res, 400, { error: "invalid seat" });
+  if (!FORECAST_COALS.includes(coalition)) return send(res, 400, { error: "invalid coalition" });
+  const s = forecast.seats[seat] || (forecast.seats[seat] = {});
+  s[coalition] = (s[coalition] || 0) + 1;
+  forecast.n += 1;
+  const tmp = FORECAST_FILE + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(forecast, null, 2));
+  fs.renameSync(tmp, FORECAST_FILE);
+  send(res, 200, { seat, counts: s, n: forecast.n });
+}
+
 /* ---- static ---- */
 function serveHtml(res){
   fs.readFile(HTML_FILE, (err, buf) => {
@@ -143,6 +168,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET"  && url === "/api/tags")     return send(res, 200, store);
     if (req.method === "POST" && url === "/api/tags")     return handleAddTag(req, res);
     if (req.method === "POST" && url === "/api/vote")      return handleVote(req, res);
+    if (req.method === "GET"  && url === "/api/forecast")  return send(res, 200, forecast);
+    if (req.method === "POST" && url === "/api/predict")   return handlePredict(req, res);
     send(res, 404, { error: "not found" });
   } catch (e) {
     send(res, 400, { error: e.message || "bad request" });

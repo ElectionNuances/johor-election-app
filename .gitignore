@@ -1,5 +1,6 @@
 # local dev artifacts
 tags.json
+forecast.json
 node_modules/
 # predecessor of index.html, kept locally only
 johor-dun-map.html

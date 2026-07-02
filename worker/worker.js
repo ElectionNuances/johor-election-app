@@ -1,14 +1,17 @@
 /*
- * Johor Election App — crowd-sourced coalition labels API.
+ * Johor Election App — crowd-sourced coalition labels + community forecast API.
  * Cloudflare Worker port of ../server.js (same validation rules).
  *
- * Storage: a KV namespace bound as TAGS, one JSON document under key "tags".
+ * Storage: a KV namespace bound as TAGS; JSON documents under keys
+ * "tags" (coalition labels) and "forecast" (SE-16 seat predictions).
  * Deploy:  see ../DEPLOY.md  (wrangler login && wrangler deploy)
  *
  * Routes:
  *   GET  /api/tags                 -> { CODE: [ {id,label,votes} ], ... }
  *   POST /api/tags  {code,label}   -> add a label (idempotent on same text)
  *   POST /api/vote  {code,id,dir}  -> dir +1/-1
+ *   GET  /api/forecast             -> { seats:{ "N.01":{BN:n,…} }, n:total }
+ *   POST /api/predict {seat,coalition}  -> record one SE-16 seat prediction
  */
 
 const MAX_LABEL_LEN   = 40;
@@ -16,6 +19,12 @@ const MAX_TAGS_PER_CO = 12;
 const MAX_BODY_BYTES  = 4096;
 const CODE_RE         = /^[A-Za-z0-9]{1,16}$/;
 const COOLDOWN_SECS   = 5;          // per-IP write cooldown
+/* Forecast: SE-16 has seats N.01–N.56; predictions are per-coalition only
+   (never per named candidate — deliberate ethical boundary). */
+const SEAT_RE         = /^N\.(\d{2})$/;
+const SEAT_MAX        = 56;
+const FORECAST_COALS  = ["BN", "PH", "PN", "ALONE", "OTHER"];
+const PREDICT_DAILY_CAP = 80;       // per IP per day (56 seats + slack)
 
 /* Origins allowed to call the API. Add your Pages origin here. */
 const ALLOWED_ORIGINS = [
@@ -80,6 +89,44 @@ async function readBody(request){
   return text ? JSON.parse(text) : {};
 }
 
+/* ---- community forecast (SE-16 seat predictions) ---- */
+async function loadForecast(env){
+  const raw = await env.TAGS.get("forecast");
+  if (raw) { try { return JSON.parse(raw); } catch {} }
+  return { seats: {}, n: 0 };
+}
+
+function validSeat(seat){
+  const m = SEAT_RE.exec(seat || "");
+  if (!m) return false;
+  const n = parseInt(m[1], 10);
+  return n >= 1 && n <= SEAT_MAX;
+}
+
+/* Per-IP daily cap for predictions (separate from the write cooldown). */
+async function underDailyCap(env, request){
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const key = "predcap:" + ip;
+  const used = parseInt((await env.TAGS.get(key)) || "0", 10);
+  if (used >= PREDICT_DAILY_CAP) return false;
+  await env.TAGS.put(key, String(used + 1), { expirationTtl: 86400 });
+  return true;
+}
+
+async function handlePredict(request, env){
+  if (!(await underDailyCap(env, request))) return json(request, 429, { error: "daily prediction limit reached" });
+  const body = await readBody(request);
+  const { seat, coalition } = body;
+  if (!validSeat(seat)) return json(request, 400, { error: "invalid seat" });
+  if (!FORECAST_COALS.includes(coalition)) return json(request, 400, { error: "invalid coalition" });
+  const fc = await loadForecast(env);
+  const s = fc.seats[seat] || (fc.seats[seat] = {});
+  s[coalition] = (s[coalition] || 0) + 1;
+  fc.n += 1;
+  await env.TAGS.put("forecast", JSON.stringify(fc));
+  return json(request, 200, { seat, counts: s, n: fc.n });
+}
+
 export default {
   async fetch(request, env){
     const url = new URL(request.url);
@@ -89,6 +136,12 @@ export default {
 
       if (request.method === "GET" && url.pathname === "/api/tags")
         return json(request, 200, await loadStore(env));
+
+      if (request.method === "GET" && url.pathname === "/api/forecast")
+        return json(request, 200, await loadForecast(env));
+
+      if (request.method === "POST" && url.pathname === "/api/predict")
+        return handlePredict(request, env);
 
       if (request.method === "POST" && url.pathname === "/api/tags"){
         if (!(await cooledDown(env, request))) return json(request, 429, { error: "slow down" });

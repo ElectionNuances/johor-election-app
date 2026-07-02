@@ -15,6 +15,13 @@ coverage. One hex ≈ one seat, laid out north→south to approximate Johor's ge
   fabricated; gaps are shown honestly
 - **Crowd-labelled coalition names**: display names come from votable tags (see
   *Coalition labels* below), never hard-coded guesses
+- **Candidate profiles**: click any candidate on a ballot — contest history, career
+  stats and party switches computed from MECo; public offices from **structured
+  Wikidata claims only** (165 of 341 ever-winning candidates verified by exact-name +
+  politics-signal matching; ambiguous cases skipped, see `data/enrichment_report.json`)
+- **Community forecast** (pending election only): visitors predict the winning
+  *coalition per seat*. Clearly disclaimed as unofficial and self-selected; the app
+  deliberately does **not** collect ratings or votes on named individuals
 
 ## Running
 
@@ -77,12 +84,17 @@ manually and merge with `scripts/merge_news.py`.
 index.html                    the app (self-contained; CDN React, SRI-pinned)
 data/ballots_jhr.csv          vendored MECo CSV (CC0)
 data/news_index.json          verified news index (frozen snapshot)
+data/candidate_profiles.json  per-candidate profiles (derived + Wikidata external layer)
+data/enrichment_report.json   Wikidata matching report (accepted/ambiguous/no-match)
 data/coalition_labels.json    static fallback coalition names
 data/meta.json                data-sync metadata (shown in the About tab)
-server.js                     optional local dev server + label-voting API
-worker/                       Cloudflare Worker port of the labels API
+server.js                     optional local dev server (labels + forecast APIs)
+worker/                       Cloudflare Worker port of the labels + forecast APIs
 scripts/refresh_data.py       CSV refresh (used by the monthly workflow)
 scripts/merge_news.py         news-batch merge/dedupe/seat-tagging
+scripts/build_profiles.py     candidate profiles: derived layer + news_refs
+scripts/enrich_wikidata.py    bulk-SPARQL external enrichment (verified matches only)
+scripts/sanity_check.py       acceptance gate (data + profiles + news invariants)
 .github/workflows/            Pages deploy + monthly data refresh
 ```
 

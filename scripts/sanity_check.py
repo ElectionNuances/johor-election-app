@@ -66,7 +66,26 @@ for el, seat in SPOTS:
     check(f"ballot {el} {seat}: ranks/votes/winner consistent", ok,
           f"{len(ballot)} candidates" if ballot else "seat missing")
 
-# --- 4. news index integrity ---
+# --- 4. candidate profile invariants ---
+prof_path = ROOT / "data" / "candidate_profiles.json"
+if prof_path.exists():
+    profiles = json.loads(prof_path.read_text(encoding="utf-8"))
+    uids = {r["candidate_uid"] for r in rows}
+    check("profiles cover every candidate_uid", set(profiles.keys()) == uids,
+          f"{len(profiles)} vs {len(uids)}")
+    tot_contests = sum(len(p["contests"]) for p in profiles.values())
+    check("Σ profile contests == CSV rows", tot_contests == len(rows), str(tot_contests))
+    tot_wins = sum(p["career_stats"]["wins"] for p in profiles.values())
+    csv_wins = sum(1 for r in rows if r["result"] in WON)
+    check("Σ profile wins == CSV wins", tot_wins == csv_wins, f"{tot_wins} vs {csv_wins}")
+    # external blocks must carry provenance
+    bad_ext = [u for u, p in profiles.items()
+               if p["external"] and not (p["external"].get("wikidata_qid") and p["external"].get("verified"))]
+    check("every external block has QID + provenance", not bad_ext, f"{len(bad_ext)} bad")
+else:
+    print("  SKIP  candidate_profiles.json absent")
+
+# --- 5. news index integrity ---
 news = json.loads((ROOT / "data" / "news_index.json").read_text(encoding="utf-8"))
 if news:
     bad_news = [r for r in news
