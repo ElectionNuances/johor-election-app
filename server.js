@@ -4,7 +4,7 @@
  * Zero dependencies (Node built-ins only). Run:  node server.js
  * Then open http://localhost:5173
  *
- * Serves johor-dun-map.html and a small JSON API backed by tags.json:
+ * Serves index.html + ./data/* and a small JSON API backed by tags.json:
  *   GET  /api/tags            -> { CODE: [ {id, label, votes} ], ... }
  *   POST /api/tags  {code,label}      -> add a label, returns that coalition's tags
  *   POST /api/vote  {code,id,dir}     -> dir +1/-1, returns that coalition's tags
@@ -16,7 +16,7 @@ const crypto = require("crypto");
 
 const PORT      = process.env.PORT || 5173;
 const ROOT      = __dirname;
-const HTML_FILE = path.join(ROOT, "johor-dun-map.html");
+const HTML_FILE = path.join(ROOT, "index.html");
 const STORE     = path.join(ROOT, "tags.json");
 
 /* ---- limits / validation ---- */
@@ -114,8 +114,21 @@ async function handleVote(req, res){
 /* ---- static ---- */
 function serveHtml(res){
   fs.readFile(HTML_FILE, (err, buf) => {
-    if (err) { res.writeHead(500); res.end("johor-dun-map.html not found next to server.js"); return; }
+    if (err) { res.writeHead(500); res.end("index.html not found next to server.js"); return; }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(buf);
+  });
+}
+
+const DATA_TYPES = { ".csv": "text/csv; charset=utf-8", ".json": "application/json" };
+function serveData(res, urlPath){
+  // /data/<file> only — no traversal, extension-allowlisted
+  const name = path.basename(urlPath);                       // strips any ../
+  const ext = path.extname(name).toLowerCase();
+  if (!DATA_TYPES[ext]) { res.writeHead(404); res.end(); return; }
+  fs.readFile(path.join(ROOT, "data", name), (err, buf) => {
+    if (err) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { "Content-Type": DATA_TYPES[ext] });
     res.end(buf);
   });
 }
@@ -126,6 +139,7 @@ const server = http.createServer(async (req, res) => {
     const url = req.url.split("?")[0];
     if (req.method === "OPTIONS")                         return send(res, 204, {});
     if (req.method === "GET"  && (url === "/" || url === "/index.html")) return serveHtml(res);
+    if (req.method === "GET"  && url.startsWith("/data/")) return serveData(res, url);
     if (req.method === "GET"  && url === "/api/tags")     return send(res, 200, store);
     if (req.method === "POST" && url === "/api/tags")     return handleAddTag(req, res);
     if (req.method === "POST" && url === "/api/vote")      return handleVote(req, res);
