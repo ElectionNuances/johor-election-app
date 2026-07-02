@@ -4,8 +4,8 @@ title: "The Johor Election App"
 type: software
 authors:
   - name: "The Johor Election App contributors"
-repository-code: "https://github.com/vgnshlvnz/johor-election-app"
-url: "https://vgnshlvnz.github.io/johor-election-app/"
+repository-code: "https://github.com/ElectionNuances/johor-election-app"
+url: "https://electionnuances.github.io/johor-election-app/"
 license: BSD-3-Clause-Attribution
 abstract: >-
   A single-page interactive hex-cartogram of Johor (Malaysia) state assembly

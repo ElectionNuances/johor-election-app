@@ -1,6 +1,6 @@
 # The Johor Election App
 
-**Live: <https://vgnshlvnz.github.io/johor-election-app/>**
+**Live: <https://electionnuances.github.io/johor-election-app/>**
 
 A single-page interactive map of Johor (Malaysia) state assembly — DUN — election
 results from **1959 to the present**, with an indexed archive of verified news

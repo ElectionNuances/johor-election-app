@@ -19,7 +19,7 @@ const COOLDOWN_SECS   = 5;          // per-IP write cooldown
 
 /* Origins allowed to call the API. Add your Pages origin here. */
 const ALLOWED_ORIGINS = [
-  "https://vgnshlvnz.github.io",
+  "https://electionnuances.github.io",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
 ];
