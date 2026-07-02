@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Johor DUN Elections 1959–2022 — Interactive Map</title>
+<meta name="description" content="Interactive hex-cartogram of Johor state assembly (DUN) election results from 1959 to the present, with an indexed news-coverage archive. Data: ElectionData.MY (CC0), The Malaysian Election Corpus (MECo)." />
+<link rel="canonical" href="https://vgnshlvnz.github.io/johor-election-app/" />
+<meta property="og:title" content="Johor DUN Elections 1959–2022 — Interactive Map" />
+<meta property="og:description" content="60+ years of Johor state election results on an interactive seat map, built on ElectionData.MY (CC0) — Thevananthan (2025), The Malaysian Election Corpus (MECo)." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://vgnshlvnz.github.io/johor-election-app/" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
+  integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z"
+  crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
+  integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1"
+  crossorigin="anonymous"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"
+  integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs"
+  crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"
+  integrity="sha384-x/ilTFv/u/eu6YSmkFDZl5V5Mm/pkxxcVv2cVJOrr1J0rvILhMvRBCy6yA75wYBj"
+  crossorigin="anonymous"></script>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --ink:#1a1d24; --muted:#6b7280;
+    --line:#e5e7eb; --header:#14161c; --neutral:#e5e7eb;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #root{height:100vh}
+  .app{display:grid; grid-template-rows:auto 1fr auto; height:100vh}
+
+  /* ---------- Header ---------- */
+  header.bar{
+    background:var(--header); color:#fff; padding:10px 18px;
+    display:flex; align-items:center; gap:22px; flex-wrap:wrap;
+  }
+  header.bar h1{font-size:16px; font-weight:700; margin:0; letter-spacing:.2px; white-space:nowrap}
+  header.bar h1 small{display:block; font-size:11px; font-weight:400; color:#9aa2b1; letter-spacing:.3px}
+  .stepper{display:flex; align-items:center; gap:10px}
+  .stepper button{
+    background:#272b34; color:#fff; border:1px solid #3a3f4b; border-radius:6px;
+    width:34px; height:34px; font-size:16px; cursor:pointer; line-height:1;
+  }
+  .stepper button:disabled{opacity:.35; cursor:default}
+  .stepper .elabel{min-width:118px; text-align:center; font-size:13px}
+  .stepper .elabel b{font-size:15px}
+  .stepper .elabel .yr{color:#9aa2b1}
+  input[type=range]{width:180px; accent-color:#6ea8ff; cursor:pointer}
+  .seg{display:flex; border:1px solid #3a3f4b; border-radius:7px; overflow:hidden}
+  .seg button{
+    background:#272b34; color:#c7ccd6; border:0; padding:8px 14px; font-size:12.5px;
+    cursor:pointer; font-weight:600;
+  }
+  .seg button.on{background:#6ea8ff; color:#0d1017}
+  .play{
+    background:#272b34; color:#fff; border:1px solid #3a3f4b; border-radius:7px;
+    padding:8px 12px; font-size:12.5px; cursor:pointer; font-weight:600; min-width:82px;
+  }
+  .play.on{background:#e2231a; border-color:#e2231a}
+  .spacer{flex:1}
+  .kbd-hint{font-size:10.5px;color:#6b7280}
+
+  /* ---------- Main ---------- */
+  .main{display:grid; grid-template-columns:64% 36%; min-height:0}
+  .mapwrap{position:relative; padding:10px 8px 4px; min-height:0; display:flex; flex-direction:column}
+  .maptitle{font-size:12px; color:var(--muted); padding:0 8px 4px; display:flex; justify-content:space-between}
+  svg.hexmap{width:100%; height:100%; flex:1; min-height:0; display:block}
+  .hex{cursor:pointer; transition:fill 300ms ease, stroke 120ms ease; animation:hexin 320ms ease both}
+  @keyframes hexin{from{opacity:0} to{opacity:1}}
+  .hex.pinned{stroke:#111827; stroke-width:2.4}
+  .hexlabel{font-size:5.2px; fill:#fff; pointer-events:none; font-weight:600; text-anchor:middle;
+    paint-order:stroke; stroke:rgba(0,0,0,.35); stroke-width:.35px; opacity:.9}
+  .newsdot{pointer-events:none}
+
+  .pending-note{
+    position:absolute; top:12px; left:50%; transform:translateX(-50%);
+    background:#fffbe6; border:1px solid #f5e08a; color:#8a6d00; padding:6px 14px;
+    border-radius:20px; font-size:12px; font-weight:600; z-index:5;
+  }
+
+  .tip{
+    position:fixed; pointer-events:none; z-index:50; background:#14161c; color:#fff;
+    border-radius:8px; padding:8px 11px; font-size:12px; max-width:230px;
+    box-shadow:0 6px 24px rgba(0,0,0,.28); line-height:1.45;
+  }
+  .tip .tname{font-weight:700; font-size:12.5px; margin-bottom:2px}
+  .tip .trow{display:flex; justify-content:space-between; gap:14px; color:#c7ccd6}
+  .tip .chip{display:inline-block; padding:1px 7px; border-radius:10px; font-size:10.5px; font-weight:700; color:#fff}
+
+  /* ---------- Panel ---------- */
+  .panel{background:var(--panel); border-left:1px solid var(--line); padding:14px 18px;
+    overflow-y:auto; min-height:0; display:flex; flex-direction:column}
+  .panel h2{font-size:15px; margin:0 0 2px}
+  .panel .sub{font-size:12px; color:var(--muted); margin-bottom:12px}
+  .backbtn{background:#eef1f5; border:1px solid var(--line); border-radius:6px; padding:6px 10px;
+    font-size:12px; cursor:pointer; margin-bottom:12px; font-weight:600; width:fit-content}
+
+  .tabs{display:flex; border-bottom:2px solid var(--line); margin-bottom:14px; gap:2px}
+  .tabs button{background:none; border:0; padding:8px 13px; font-size:12.5px; font-weight:600;
+    color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px}
+  .tabs button.on{color:var(--ink); border-bottom-color:#14161c}
+  .tabs .count{font-size:10px; background:#eef1f5; border-radius:8px; padding:1px 6px; margin-left:4px; color:var(--muted)}
+
+  .stats{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:6px 0 18px}
+  .stat{background:#f7f8fa; border:1px solid var(--line); border-radius:9px; padding:10px 12px}
+  .stat .n{font-size:20px; font-weight:800; line-height:1}
+  .stat .l{font-size:11px; color:var(--muted); margin-top:4px}
+
+  .barrow{display:flex; align-items:center; gap:9px; margin-bottom:8px; font-size:12.5px}
+  .barrow .co{width:82px; font-weight:700; flex-shrink:0}
+  .barrow .track{flex:1; background:#eef1f5; border-radius:5px; height:18px; overflow:hidden}
+  .barrow .fill{height:100%; border-radius:5px; transition:width 300ms ease}
+  .barrow .cnt{width:26px; text-align:right; font-weight:700; flex-shrink:0}
+
+  table.ballot{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:4px}
+  table.ballot th{text-align:left; color:var(--muted); font-weight:600; font-size:11px;
+    border-bottom:1px solid var(--line); padding:5px 4px}
+  table.ballot td{padding:6px 4px; border-bottom:1px solid #f0f1f4; vertical-align:top}
+  table.ballot tr.win td{background:#fbfcff}
+  .cand .nm{font-weight:600}
+  .cand .meta{font-size:10.5px; color:var(--muted)}
+  .cochip{display:inline-block; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:700; color:#fff; white-space:nowrap}
+  .badge{display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; font-weight:700}
+  .badge.won{background:#dcfce7; color:#166534}
+  .badge.unc{background:#e0e7ff; color:#3730a3}
+  .badge.dep{background:#fee2e2; color:#991b1b}
+  .badge.lost{background:#f3f4f6; color:#6b7280}
+  .num{text-align:right; font-variant-numeric:tabular-nums}
+
+  .tl-title{font-size:12.5px; font-weight:700; margin:18px 0 8px}
+  .timeline{display:flex; flex-wrap:wrap; gap:4px}
+  .tlcell{width:34px; text-align:center; font-size:9px; color:var(--muted)}
+  .tlcell .box{height:26px; border-radius:4px; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:8.5px; font-weight:700; margin-bottom:2px}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line)}
+  .legend .li{display:flex; align-items:center; gap:5px; font-size:11px; color:#374151}
+  .legend .sw{width:12px; height:12px; border-radius:3px}
+
+  /* ---------- Coverage tab ---------- */
+  .newsrow{padding:9px 0; border-bottom:1px solid #f0f1f4; font-size:12.5px; line-height:1.45}
+  .newsrow a{color:#0b3ea8; text-decoration:none; font-weight:600}
+  .newsrow a:hover{text-decoration:underline}
+  .newsmeta{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:3px; font-size:10.5px; color:var(--muted)}
+  .obadge{background:#eef1f5; border-radius:4px; padding:1px 6px; font-weight:700; color:#374151}
+  .lchip{border:1px solid var(--line); border-radius:8px; padding:0 6px; text-transform:uppercase; letter-spacing:.4px}
+  .arch{color:#8a6d00}
+  .divider{font-size:11px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.6px;
+    margin:12px 0 4px; padding-bottom:4px; border-bottom:1px solid var(--line)}
+  .pager{display:flex; gap:8px; align-items:center; justify-content:center; margin-top:12px; font-size:12px}
+  .pager button{background:#eef1f5; border:1px solid var(--line); border-radius:6px; padding:5px 12px; cursor:pointer; font-weight:600}
+  .pager button:disabled{opacity:.4; cursor:default}
+  .empty{background:#f7f8fa; border:1px dashed var(--line); border-radius:9px; padding:18px; text-align:center;
+    color:var(--muted); font-size:12.5px; margin-top:8px}
+
+  /* ---------- About tab ---------- */
+  .about p{font-size:12.5px; line-height:1.6; color:#374151}
+  .about h3{font-size:13px; margin:16px 0 6px}
+  .bibtex{position:relative; background:#14161c; color:#c7ccd6; border-radius:9px; padding:12px 14px;
+    font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; line-height:1.55; overflow-x:auto; white-space:pre}
+  .copybtn{position:absolute; top:8px; right:8px; background:#272b34; color:#fff; border:1px solid #3a3f4b;
+    border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; font-weight:600}
+
+  /* ---------- Coalition-labels poll ---------- */
+  .labelco{padding:10px 0; border-bottom:1px solid var(--line)}
+  .labelco:last-child{border-bottom:0}
+  .labelco-h{display:flex; align-items:center; gap:8px; margin-bottom:6px}
+  .labelco-name{font-weight:700; font-size:13px}
+  .labelco-none{font-size:12px; color:#9ca3af; font-style:italic}
+  .pollrow{display:flex; align-items:center; gap:8px; margin:4px 0}
+  .votebtn{width:26px; height:26px; flex-shrink:0; border:1px solid var(--line); border-radius:6px;
+    background:#f7f8fa; color:#6b7280; cursor:pointer; font-size:11px; line-height:1; font-weight:700}
+  .votebtn.on{background:#14161c; color:#fff; border-color:#14161c}
+  .polltrack{flex:1; background:#eef1f5; border-radius:5px; height:16px; overflow:hidden; min-width:40px}
+  .pollfill{height:100%; border-radius:5px; opacity:.85; transition:width 250ms ease}
+  .polllabel{font-size:12px; flex-shrink:0; max-width:44%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pollcount{width:22px; text-align:right; font-weight:700; font-size:12px; flex-shrink:0}
+  .addtag{display:flex; gap:6px; margin-top:7px}
+  .addtag input{flex:1; border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:12px}
+  .addtag input:focus{outline:none; border-color:#6ea8ff}
+  .addtag button{background:#14161c; color:#fff; border:0; border-radius:6px; padding:6px 12px;
+    font-size:12px; font-weight:600; cursor:pointer}
+  .addtag button:disabled{opacity:.4; cursor:default}
+  .apinote{background:#f7f8fa; border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+    font-size:11.5px; color:var(--muted); margin-bottom:10px}
+
+  /* ---------- Footer / states ---------- */
+  footer.credit{background:var(--header); color:#9aa2b1; font-size:11px; padding:7px 18px; text-align:center}
+  footer.credit a{color:#c7ccd6}
+  .center-state{display:flex; align-items:center; justify-content:center; height:100vh; flex-direction:column; gap:14px; color:var(--muted)}
+  .spinner{width:38px; height:38px; border:4px solid #d7dbe2; border-top-color:#6ea8ff; border-radius:50%; animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .errbox{background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:16px 22px; border-radius:10px; max-width:460px; text-align:center}
+
+  /* ---------- Mobile: stack map above panel ---------- */
+  @media (max-width: 820px){
+    body{overflow:auto}
+    .app{height:auto; grid-template-rows:auto auto auto auto}
+    .main{grid-template-columns:1fr; grid-template-rows:52vh auto}
+    .panel{border-left:0; border-top:1px solid var(--line)}
+    header.bar{gap:12px}
+    input[type=range]{width:130px}
+    .kbd-hint{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const {useState, useEffect, useMemo, useRef, useCallback} = React;
+
+/* ============================================================
+   CONFIG
+   ============================================================ */
+/* Tags API base URL. "" = same-origin (works with the local dev
+   server, `node server.js`). After deploying worker/ to Cloudflare,
+   put its URL here, e.g. "https://johor-tags.<acct>.workers.dev".
+   If the API is unreachable the app falls back to the static
+   labels in ./data/coalition_labels.json, then to bare codes. */
+const API_BASE = "";
+
+const CSV_URL    = "./data/ballots_jhr.csv";
+const NEWS_URL   = "./data/news_index.json";
+const LABELS_URL = "./data/coalition_labels.json";
+const META_URL   = "./data/meta.json";
+
+/* ============================================================
+   COLOUR SYSTEM — colours only. Coalition *names* come from
+   crowd-sourced votable tags (API) → static labels file → code.
+   ============================================================ */
+const COAL = {
+  BN:        "#00318f",
+  PH:        "#e2231a",
+  PN:        "#00584d",
+  PERIKATAN: "#1a2b6b",   // 1959–69 Alliance (UMNO+MCA+MIC)
+  PR:        "#b5231d",
+  BA:        "#7c3aed",
+  APU:       "#0e7490",
+  GS:        "#166534",
+  SF:        "#b45309",
+  HAK:       "#9d174d",
+  GR:        "#4d7c0f",
+  ALONE:     "#9ca3af",
+};
+const UNKNOWN = "#6b7280";
+const NEUTRAL = "#e5e7eb";
+const coalColour = (code) => (COAL[code] || UNKNOWN);
+
+/* Label-resolution rule: highest votes wins, earliest added wins ties.
+   Returns null → caller falls back to static labels, then bare code. */
+function resolveDisplayName(tags){
+  if(!tags || !tags.length) return null;
+  let best = null;
+  for(const t of tags){
+    if(!best || t.votes > best.votes) best = t;
+  }
+  return best ? best.label : null;
+}
+const NamesContext = React.createContext((code)=> code || "Other");
+const useNameOf = () => React.useContext(NamesContext);
+
+/* colour helpers for margin shading */
+function hexToRgb(h){ const n=parseInt(h.slice(1),16); return [n>>16&255,n>>8&255,n&255]; }
+function mix(a,b,t){
+  const ra=hexToRgb(a), rb=hexToRgb(b);
+  const r=Math.round(ra[0]+(rb[0]-ra[0])*t),
+        g=Math.round(ra[1]+(rb[1]-ra[1])*t),
+        bl=Math.round(ra[2]+(rb[2]-ra[2])*t);
+  return "#"+[r,g,bl].map(v=>v.toString(16).padStart(2,"0")).join("");
+}
+/* Margin view: light tint (small margin) -> full colour (big margin). */
+function marginFill(coalCode, marginPct, uncontested){
+  const base = coalColour(coalCode);
+  if(uncontested) return base;
+  const t = Math.max(0, Math.min(1, (marginPct||0)/40));
+  return mix("#eef1f5", base, 0.20 + 0.80*t);
+}
+
+/* ============================================================
+   DATA UTILITIES  (verified against the CSV — do not alter casually)
+   ============================================================ */
+const toInt = (v) => { if(v==null) return 0; const n=parseInt(String(v).replace(/,/g,"").trim(),10); return isNaN(n)?0:n; };
+const norm  = (s) => (s||"").toLowerCase().replace(/\s+/g," ").trim();
+function splitSeat(seat){
+  const m = /^(\S+)\s+(.*)$/.exec((seat||"").trim());
+  return m ? {code:m[1], name:m[2]} : {code:"", name:(seat||"").trim()};
+}
+
+function cleanRows(raw){
+  return raw
+    .filter(r => r.seat && r.election)
+    .map(r => {
+      const {code, name} = splitSeat(r.seat);
+      const d = new Date(r.date);
+      return {
+        election: r.election.trim(),
+        date: r.date,
+        year: isNaN(d) ? (parseInt((r.date||"").slice(0,4),10)||null) : d.getFullYear(),
+        seat_code: code,
+        seat_name: name,
+        seat_key: norm(name),
+        ballot_order: toInt(r.ballot_order),
+        candidate: (r.name || r.name_on_ballot || "").trim(),
+        sex: r.sex || null,
+        ethnicity: r.ethnicity && r.ethnicity.trim() ? r.ethnicity.trim() : null,
+        age: (toInt(r.age) > 0) ? toInt(r.age) : null,
+        party: (r.party_on_ballot || r.party || "").trim(),
+        coalition: (r.coalition || "").trim(),
+        votes: toInt(r.votes),
+        votes_perc: parseFloat(r.votes_perc) || 0,
+        rank: toInt(r.rank),
+        result: (r.result || "").trim(),
+      };
+    });
+}
+
+function buildModel(rows){
+  const elMap = new Map();
+  for(const r of rows){
+    if(!elMap.has(r.election)) elMap.set(r.election, {code:r.election, year:r.year, decided:false});
+    if(r.result==="won" || r.result==="won_uncontested") elMap.get(r.election).decided = true;
+    if(r.year && !elMap.get(r.election).year) elMap.get(r.election).year = r.year;
+  }
+  const elections = [...elMap.values()].sort((a,b)=>a.code.localeCompare(b.code));
+  elections.forEach(e => e.pending = !e.decided);
+
+  const byElection = {};
+  for(const e of elections) byElection[e.code] = {seats:new Map()};
+
+  const grouped = {};
+  for(const r of rows){
+    const k = r.election+"|"+r.seat_code;
+    (grouped[k] = grouped[k] || []).push(r);
+  }
+
+  for(const k in grouped){
+    const ballot = grouped[k].sort((a,b)=> (a.rank||99)-(b.rank||99) || b.votes-a.votes);
+    const [el, code] = k.split("|");
+    const first = ballot[0];
+    const winner = ballot.find(r=>r.result==="won"||r.result==="won_uncontested") || null;
+    const uncontested = (winner && winner.result==="won_uncontested") || ballot.length===1;
+    const runnerUp = ballot.find(r=> r!==winner) || null;
+    const totalVotes = ballot.reduce((s,r)=>s+r.votes,0);
+    let margin=null, marginPct=null;
+    if(winner && runnerUp && !uncontested){
+      margin = winner.votes - runnerUp.votes;
+      marginPct = totalVotes ? (margin/totalVotes*100) : 0;
+    }
+    byElection[el].seats.set(code, {
+      code, name:first.seat_name, key:first.seat_key,
+      ballot, winner, runnerUp, uncontested, margin, marginPct, totalVotes,
+    });
+  }
+
+  const summary = {};
+  for(const e of elections){
+    const seats = [...byElection[e.code].seats.values()];
+    const wonBy = {};
+    let totalVotes=0, candidates=0, lostDeposits=0, uncontestedN=0;
+    for(const s of seats){
+      totalVotes += s.totalVotes;
+      candidates += s.ballot.length;
+      lostDeposits += s.ballot.filter(r=>r.result==="lost_deposit").length;
+      if(s.uncontested) uncontestedN++;
+      if(s.winner){ const c=s.winner.coalition||"?"; wonBy[c]=(wonBy[c]||0)+1; }
+    }
+    summary[e.code] = {
+      seatCount: seats.length, wonBy, totalVotes, candidates, lostDeposits,
+      uncontested: uncontestedN,
+      wonSorted: Object.entries(wonBy).sort((a,b)=>b[1]-a[1]),
+    };
+  }
+
+  const timeline = {};
+  for(const e of elections){
+    for(const s of byElection[e.code].seats.values()){
+      if(!s.winner) continue;
+      (timeline[s.key] = timeline[s.key] || {})[e.code] =
+        {year:e.year, coalition:s.winner.coalition, name:s.winner.candidate, code:s.code, uncontested:s.uncontested};
+    }
+  }
+
+  const coalCount = {};
+  for(const r of rows){ const c=r.coalition; if(c) coalCount[c]=(coalCount[c]||0)+1; }
+  const coalitions = Object.keys(coalCount).sort((a,b)=>coalCount[b]-coalCount[a]);
+
+  return {elections, byElection, summary, timeline, coalitions};
+}
+
+/* ============================================================
+   HEX / HONEYCOMB LAYOUT — N-numbers run north→south, so serpentine
+   rows with a Johor-shaped width profile approximate the geography.
+   ============================================================ */
+const R = 10;
+const HW = Math.sqrt(3)*R;
+const VSTEP = 1.5*R;
+const PROFILE = [0.42,0.62,0.80,0.95,1.0,1.0,0.92,0.72,0.46];
+
+function computeRowLengths(n){
+  const sum = PROFILE.reduce((a,b)=>a+b,0);
+  let lens = PROFILE.map(w => Math.max(1, Math.round(n * w/sum)));
+  let diff = n - lens.reduce((a,b)=>a+b,0);
+  const order = PROFILE.map((w,i)=>i).sort((a,b)=>PROFILE[b]-PROFILE[a]);
+  let i=0;
+  while(diff!==0){
+    const idx = order[i % order.length];
+    if(diff>0){ lens[idx]++; diff--; }
+    else if(lens[idx]>1){ lens[idx]--; diff++; }
+    i++;
+    if(i>1000) break;
+  }
+  return lens;
+}
+
+function layoutSeats(seats){
+  const n = seats.length;
+  const lens = computeRowLengths(n);
+  const maxLen = Math.max(...lens);
+  const vbW = maxLen*HW + HW;
+  const vbH = lens.length*VSTEP + R*1.4;
+  const cx0 = vbW/2;
+  const out = [];
+  let idx=0;
+  lens.forEach((len,row)=>{
+    const y = R + row*VSTEP;
+    const rowLeft = cx0 - (len-1)*HW/2;
+    for(let c=0;c<len && idx<n;c++){
+      out.push({seat:seats[idx], cx: rowLeft + c*HW, cy:y});
+      idx++;
+    }
+  });
+  return {positions:out, viewBox:`0 0 ${vbW.toFixed(1)} ${vbH.toFixed(1)}`};
+}
+function hexPoints(cx,cy){
+  let p="";
+  for(let i=0;i<6;i++){
+    const a = Math.PI/180*(60*i - 90);
+    p += `${(cx+R*Math.cos(a)).toFixed(2)},${(cy+R*Math.sin(a)).toFixed(2)} `;
+  }
+  return p.trim();
+}
+
+/* ============================================================
+   COMPONENTS
+   ============================================================ */
+function fmt(n){ return (n||0).toLocaleString("en-US"); }
+
+function HexMap({election, seatsMap, view, pinned, newsSeats, onHover, onLeave, onPin}){
+  const nameOf = useNameOf();
+  const seats = useMemo(
+    ()=> [...seatsMap.values()].sort((a,b)=> a.code.localeCompare(b.code, undefined, {numeric:true})),
+    [seatsMap]
+  );
+  const {positions, viewBox} = useMemo(()=>layoutSeats(seats), [seats]);
+
+  const fillFor = (s) => {
+    if(election.pending || !s.winner) return NEUTRAL;
+    const co = s.winner.coalition;
+    return view==="margin" ? marginFill(co, s.marginPct, s.uncontested) : coalColour(co);
+  };
+
+  return (
+    <svg className="hexmap" viewBox={viewBox} preserveAspectRatio="xMidYMid meet"
+         role="group" aria-label={"Johor seat map, "+election.code+" ("+election.year+")"}
+         onMouseLeave={onLeave}>
+      {positions.map(({seat,cx,cy})=>{
+        const w = seat.winner;
+        const aria = seat.code+" "+seat.name+": "+
+          (election.pending ? "results pending"
+            : w ? (nameOf(w.coalition)+" won"+(seat.uncontested?" uncontested":"")) : "no result");
+        return (
+          <g key={seat.code}>
+            <polygon
+              className={"hex"+(pinned===seat.code?" pinned":"")}
+              points={hexPoints(cx,cy)}
+              fill={fillFor(seat)}
+              stroke={pinned===seat.code ? "#111827" : "rgba(255,255,255,.85)"}
+              strokeWidth={pinned===seat.code?2.4:1}
+              role="button" aria-label={aria} tabIndex={-1}
+              onMouseMove={(e)=>onHover(e, seat)}
+              onClick={()=>onPin(seat.code)}
+            />
+            <text className="hexlabel" x={cx} y={cy+1.8} aria-hidden="true">
+              {seat.code.replace(/^N\.?/,"")}
+            </text>
+            {newsSeats && newsSeats.has(seat.key) && (
+              <circle className="newsdot" cx={cx+R*0.52} cy={cy-R*0.62} r={1.9}
+                      fill="#fff" stroke="#14161c" strokeWidth="0.55" aria-hidden="true"/>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function Tooltip({data}){
+  const nameOf = useNameOf();
+  if(!data) return null;
+  const {x,y,seat} = data;
+  const w = seat.winner;
+  const style = {left: Math.min(x+16, window.innerWidth-244), top: Math.min(y+16, window.innerHeight-150)};
+  return (
+    <div className="tip" style={style}>
+      <div className="tname">{seat.code} · {seat.name}</div>
+      {w ? (
+        <>
+          <div style={{margin:"3px 0"}}>
+            <span className="chip" style={{background:coalColour(w.coalition)}}>{w.coalition||"—"}</span>{" "}
+            <span style={{color:"#e5e7eb"}}>{w.candidate}</span>
+          </div>
+          {nameOf(w.coalition)!==w.coalition &&
+            <div className="trow"><span>Coalition</span><b>{nameOf(w.coalition)}</b></div>}
+          <div className="trow"><span>Party</span><b>{w.party||"—"}</b></div>
+          <div className="trow"><span>Votes</span><b>{fmt(w.votes)} ({w.votes_perc.toFixed(1)}%)</b></div>
+          <div className="trow"><span>Margin</span><b>{seat.uncontested ? "uncontested" : fmt(seat.margin)+" ("+seat.marginPct.toFixed(1)+"%)"}</b></div>
+        </>
+      ) : <div style={{color:"#c7ccd6"}}>Results pending</div>}
+    </div>
+  );
+}
+
+/* ---------------- Results tab ---------------- */
+function Statewide({election, summary, view, coalitions}){
+  const nameOf = useNameOf();
+  if(!summary) return null;
+  const {seatCount, wonSorted, totalVotes, candidates, lostDeposits, uncontested} = summary;
+  const maxWon = Math.max(1, ...wonSorted.map(w=>w[1]));
+  return (
+    <div>
+      {election.pending ? (
+        <div className="errbox" style={{background:"#fffbe6",border:"1px solid #f5e08a",color:"#8a6d00"}}>
+          The {election.year} state election has not been decided in this dataset — no winners to summarise yet.
+        </div>
+      ) : (
+        <>
+          <div style={{fontSize:12.5, fontWeight:700, margin:"4px 0 8px"}}>Seats won by coalition</div>
+          {wonSorted.map(([co,cnt])=>(
+            <div className="barrow" key={co}>
+              <span className="co" title={nameOf(co)}>{co}</span>
+              <div className="track">
+                <div className="fill" style={{width:(cnt/maxWon*100)+"%", background:coalColour(co)}}/>
+              </div>
+              <span className="cnt">{cnt}</span>
+            </div>
+          ))}
+          <div className="stats">
+            <div className="stat"><div className="n">{seatCount}</div><div className="l">seats contested</div></div>
+            <div className="stat"><div className="n">{fmt(totalVotes)}</div><div className="l">total valid votes</div></div>
+            <div className="stat"><div className="n">{candidates}</div><div className="l">candidates</div></div>
+            <div className="stat"><div className="n">{lostDeposits}</div><div className="l">lost deposits</div></div>
+            <div className="stat"><div className="n">{uncontested}</div><div className="l">uncontested seats</div></div>
+            <div className="stat"><div className="n">{(candidates/seatCount).toFixed(1)}</div><div className="l">avg. candidates / seat</div></div>
+          </div>
+        </>
+      )}
+      <div className="legend">
+        {coalitions.map(code=>{
+          const nm = nameOf(code);
+          return (
+            <div className="li" key={code} title={nm}>
+              <span className="sw" style={{background:coalColour(code)}}/>{code}
+              {nm!==code && <span style={{color:"var(--muted)"}}> · {nm}</span>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{fontSize:11,color:"var(--muted)",marginTop:12}}>
+        Click any hex to inspect a seat. Dots mark seats with indexed news coverage.
+        {view==="margin" ? " Margin view: darker = larger winning margin." : ""}
+      </div>
+    </div>
+  );
+}
+
+function resultBadge(res){
+  if(res==="won") return <span className="badge won">won</span>;
+  if(res==="won_uncontested") return <span className="badge unc">uncontested</span>;
+  if(res==="lost_deposit") return <span className="badge dep">lost deposit</span>;
+  if(res==="pending") return <span className="badge lost">pending</span>;
+  return <span className="badge lost">lost</span>;
+}
+
+function SeatDetail({seat, election, elections, timeline}){
+  const nameOf = useNameOf();
+  return (
+    <div>
+      <h2>{seat.code} · {seat.name}</h2>
+      <div className="sub">
+        {election.code} · {election.year}
+        {seat.uncontested ? " · uncontested" : (seat.winner ? " · margin "+fmt(seat.margin)+" ("+seat.marginPct.toFixed(1)+"%)" : " · pending")}
+      </div>
+      <table className="ballot">
+        <thead><tr><th>Candidate</th><th>Coalition</th><th className="num">Votes</th><th className="num">%</th><th></th></tr></thead>
+        <tbody>
+          {seat.ballot.map((r,i)=>(
+            <tr key={i} className={r.result==="won"||r.result==="won_uncontested"?"win":""}>
+              <td className="cand">
+                <div className="nm">{r.candidate||"—"}</div>
+                <div className="meta">{r.party||"—"} · {r.sex||"—"} · {r.age!=null?r.age:"—"} · {r.ethnicity||"—"}</div>
+              </td>
+              <td><span className="cochip" style={{background:coalColour(r.coalition)}}>{r.coalition||"—"}</span></td>
+              <td className="num">{fmt(r.votes)}</td>
+              <td className="num">{r.votes_perc.toFixed(1)}</td>
+              <td>{resultBadge(r.result)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="tl-title">Winners of “{seat.name}” across elections</div>
+      <div className="timeline">
+        {elections.map(e=>{
+          const w = timeline[seat.key] && timeline[seat.key][e.code];
+          return (
+            <div className="tlcell" key={e.code}>
+              <div className="box" title={w ? (nameOf(w.coalition)+" — "+w.name) : "not contested / n.a."}
+                   style={{background: w ? coalColour(w.coalition) : "#eef1f5", color: w?"#fff":"#c0c4cc"}}>
+                {w ? w.coalition : "—"}
+              </div>
+              <div>’{String(e.year).slice(2)}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{fontSize:11,color:"var(--muted)",marginTop:10}}>
+        Timeline matches seats by name, so it spans redelineations where the name persisted.
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Coverage tab ---------------- */
+const PAGE_SIZE = 30;
+function NewsRow({r}){
+  const href = (r.status==="live" && r.url) ? r.url : (r.archive_url || r.url);
+  return (
+    <div className="newsrow">
+      {href
+        ? <a href={href} target="_blank" rel="noopener noreferrer">{r.title_clean || r.title_raw || r.url}</a>
+        : <span style={{color:"var(--muted)"}}>{r.title_clean || r.title_raw || "(title unrecoverable)"}</span>}
+      <div className="newsmeta">
+        <span className="obadge">{r.outlet}</span>
+        {r.date_published && <span>{r.date_published}</span>}
+        <span className="lchip">{r.language}</span>
+        {r.archive_url && <span className="arch" title="Wayback Machine snapshot available">🗄 archived</span>}
+        {r.status==="dead" && !r.archive_url && <span className="arch">link dead</span>}
+      </div>
+    </div>
+  );
+}
+
+function Coverage({election, news, pinnedSeat}){
+  const [page, setPage] = useState(0);
+  useEffect(()=>{ setPage(0); }, [election.code, pinnedSeat && pinnedSeat.code]);
+
+  const rows = useMemo(()=> news.filter(r => r.election===election.code), [news, election.code]);
+  const seatRows = useMemo(()=>{
+    if(!pinnedSeat) return [];
+    return rows.filter(r => r.seat_key && r.seat_key===pinnedSeat.key);
+  }, [rows, pinnedSeat]);
+  const rest = useMemo(()=>{
+    const seatSet = new Set(seatRows);
+    return rows.filter(r=>!seatSet.has(r));
+  }, [rows, seatRows]);
+
+  const pages = Math.max(1, Math.ceil(rest.length/PAGE_SIZE));
+  const paged = rest.slice(page*PAGE_SIZE, (page+1)*PAGE_SIZE);
+
+  if(!rows.length)
+    return <div className="empty">No indexed coverage for {election.code} ({election.year}).<br/>
+      <span style={{fontSize:11}}>Expected for elections before the online-news era — the index only contains verifiably fetched links.</span></div>;
+
+  return (
+    <div>
+      {pinnedSeat && (
+        <>
+          <div className="divider">This seat — {pinnedSeat.code} {pinnedSeat.name}</div>
+          {seatRows.length
+            ? seatRows.map((r,i)=><NewsRow key={"s"+i} r={r}/>)
+            : <div style={{fontSize:12,color:"var(--muted)",padding:"6px 0"}}>No seat-tagged coverage for this seat.</div>}
+          <div className="divider">All {election.code} coverage</div>
+        </>
+      )}
+      {paged.map((r,i)=><NewsRow key={i} r={r}/>)}
+      {pages>1 && (
+        <div className="pager">
+          <button onClick={()=>setPage(p=>p-1)} disabled={page===0}>‹ Prev</button>
+          <span>{page+1} / {pages}</span>
+          <button onClick={()=>setPage(p=>p+1)} disabled={page>=pages-1}>Next ›</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- About tab ---------------- */
+const BIBTEX = `@article{thevananthan2025malaysian,
+  author  = {Thevananthan, Thevesh},
+  title   = {The Malaysian Election Corpus (MECo): Federal and State-Level Election Results from 1955 to 2025},
+  journal = {Scientific Data},
+  year    = {2025}
+}`;
+
+function About({meta, newsCount, labels}){
+  const [copied, setCopied] = useState(false);
+  const copy = ()=>{
+    navigator.clipboard.writeText(BIBTEX).then(()=>{
+      setCopied(true); setTimeout(()=>setCopied(false), 1600);
+    });
+  };
+  return (
+    <div className="about">
+      <h3>Data</h3>
+      <p>
+        Election results: <a href="https://electiondata.my" target="_blank" rel="noopener noreferrer">ElectionData.MY</a> (CC0),
+        headline ballots for Johor (<a href="https://electiondata.my/data-catalogue/headline-ballots-state-jhr/" target="_blank" rel="noopener noreferrer">catalogue entry</a>).
+        Thevananthan, T. (2025). <i>The Malaysian Election Corpus (MECo): Federal and State-Level Election
+        Results from 1955 to 2025</i>. Scientific Data.
+      </p>
+      <div className="bibtex">
+        <button className="copybtn" onClick={copy}>{copied ? "Copied ✓" : "Copy BibTeX"}</button>
+        {BIBTEX}
+      </div>
+      <h3>News index methodology</h3>
+      <p>
+        Every entry in the Coverage tab was collected by reading the page's actual <code>&lt;title&gt;</code> tag
+        from a live fetch, or from a real Wayback Machine snapshot when the page is gone — nothing is fabricated.
+        Dead links are served via their archive URL and marked 🗄. Gaps (especially pre-2008) are shown honestly
+        rather than padded. Currently indexed: <b>{newsCount}</b> links.
+      </p>
+      <h3>Data sync</h3>
+      <p>Last synced: <b>{(meta && meta.last_synced) || "—"}</b>
+        {meta && meta.news_frozen ? <> · news index frozen: <b>{meta.news_frozen}</b></> : null}</p>
+      <h3>Coalition names</h3>
+      <p style={{marginBottom:6}}>
+        Coalition display names are crowd-labelled, not asserted: propose a label and up-vote the best —
+        the top-voted tag becomes the name shown everywhere. Codes without an agreed label stay as codes.
+      </p>
+      <LabelsPanel labels={labels}/>
+    </div>
+  );
+}
+
+/* ---------------- Coalition labels poll ---------------- */
+function LabelsPanel({labels}){
+  const nameOf = useNameOf();
+  const {coalitions, tags, available, addTag, vote, voted} = labels;
+  if(!available)
+    return (
+      <div className="apinote">
+        Live label voting is offline right now (the tags API isn’t reachable), so names fall back to a
+        static snapshot. Locally: run <code>node server.js</code>; in production: deploy <code>worker/</code>{" "}
+        and set <code>API_BASE</code> — see DEPLOY.md.
+      </div>
+    );
+  return (
+    <div>
+      {coalitions.map(code=>(
+        <CoalitionLabelRow key={code} code={code} tags={tags[code]||[]}
+          voted={voted} onAdd={addTag} onVote={vote} resolved={nameOf(code)} />
+      ))}
+    </div>
+  );
+}
+
+function CoalitionLabelRow({code, tags, voted, onAdd, onVote, resolved}){
+  const [val, setVal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const sorted = [...tags].sort((a,b)=> b.votes-a.votes);
+  const maxV = Math.max(1, ...sorted.map(t=>t.votes));
+  const submit = async (e)=>{
+    e.preventDefault();
+    const label = val.trim();
+    if(!label || busy) return;
+    setBusy(true);
+    await onAdd(code, label);
+    setBusy(false); setVal("");
+  };
+  return (
+    <div className="labelco">
+      <div className="labelco-h">
+        <span className="cochip" style={{background:coalColour(code)}}>{code}</span>
+        {resolved!==code
+          ? <span className="labelco-name">{resolved}</span>
+          : <span className="labelco-none">no agreed name yet</span>}
+      </div>
+      {sorted.map(t=>{
+        const mine = voted.has(code+":"+t.id);
+        return (
+          <div className="pollrow" key={t.id}>
+            <button className={"votebtn"+(mine?" on":"")} onClick={()=>onVote(code, t.id, mine?-1:1)}
+                    title={mine?"remove your vote":"up-vote"} aria-label={"up-vote label "+t.label}>▲</button>
+            <div className="polltrack"><div className="pollfill" style={{width:(t.votes/maxV*100)+"%", background:coalColour(code)}}/></div>
+            <span className="polllabel">{t.label}</span>
+            <span className="pollcount">{t.votes}</span>
+          </div>
+        );
+      })}
+      <form className="addtag" onSubmit={submit}>
+        <input value={val} maxLength={40} placeholder="propose a label…" aria-label={"propose a label for "+code}
+               onChange={e=>setVal(e.target.value)} />
+        <button type="submit" disabled={busy || !val.trim()}>Add</button>
+      </form>
+    </div>
+  );
+}
+
+/* ============================================================
+   APP
+   ============================================================ */
+function App(){
+  const [status, setStatus] = useState("loading");
+  const [errMsg, setErrMsg] = useState("");
+  const [model, setModel] = useState(null);
+  const [idx, setIdx] = useState(0);
+  const [view, setView] = useState("winner");
+  const [pinned, setPinned] = useState(null);
+  const [tip, setTip] = useState(null);
+  const [playing, setPlaying] = useState(false);
+  const [tab, setTab] = useState("results");           // results | coverage | about
+  const [news, setNews] = useState([]);
+  const [meta, setMeta] = useState(null);
+  const [staticLabels, setStaticLabels] = useState({});
+
+  // ---- crowd-sourced coalition labels (external API, graceful fallback) ----
+  const [tags, setTags] = useState({});
+  const [tagsAvailable, setTagsAvailable] = useState(false);
+  const [voted, setVoted] = useState(()=>{
+    try { return new Set(JSON.parse(localStorage.getItem("jhr_votes") || "[]")); }
+    catch { return new Set(); }
+  });
+  const persistVoted = useCallback((set)=>{
+    setVoted(new Set(set));
+    try { localStorage.setItem("jhr_votes", JSON.stringify([...set])); } catch {}
+  }, []);
+
+  useEffect(()=>{
+    let alive = true;
+    fetch(API_BASE + "/api/tags")
+      .then(r => { if(!r.ok) throw new Error(); return r.json(); })
+      .then(json => { if(alive){ setTags(json); setTagsAvailable(true); } })
+      .catch(()=>{ if(alive){ setTagsAvailable(false); } });
+    return ()=>{ alive=false; };
+  }, []);
+
+  const addTag = useCallback(async (code, label)=>{
+    try {
+      const r = await fetch(API_BASE + "/api/tags", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({code, label})});
+      const data = await r.json();
+      if(data.tags){
+        setTags(t => ({...t, [code]: data.tags}));
+        if(data.added){ const s=new Set(voted); s.add(code+":"+data.added); persistVoted(s); }
+      }
+    } catch {}
+  }, [voted, persistVoted]);
+
+  const vote = useCallback(async (code, id, dir)=>{
+    try {
+      const r = await fetch(API_BASE + "/api/vote", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({code, id, dir})});
+      const data = await r.json();
+      if(data.tags){
+        setTags(t => ({...t, [code]: data.tags}));
+        const s = new Set(voted);
+        if(dir>0) s.add(code+":"+id); else s.delete(code+":"+id);
+        persistVoted(s);
+      }
+    } catch {}
+  }, [voted, persistVoted]);
+
+  /* name resolution: live tags → static labels file → bare code */
+  const nameOf = useCallback(
+    (code)=> resolveDisplayName(tags[code]) || staticLabels[code] || code || "Other",
+    [tags, staticLabels]
+  );
+
+  // ---- load vendored data ----
+  useEffect(()=>{
+    let alive = true;
+    const softJson = (url, fallback) => fetch(url).then(r=>r.ok?r.json():fallback).catch(()=>fallback);
+    Promise.all([
+      fetch(CSV_URL).then(r => { if(!r.ok) throw new Error("HTTP "+r.status+" loading ballots CSV"); return r.text(); }),
+      softJson(NEWS_URL, []),
+      softJson(LABELS_URL, {}),
+      softJson(META_URL, null),
+    ]).then(([text, newsJson, labelsJson, metaJson]) => {
+        const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
+        const rows = cleanRows(parsed.data);
+        if(!rows.length) throw new Error("No rows parsed from CSV.");
+        const m = buildModel(rows);
+        if(!alive) return;
+        // attach normalised seat_key to news rows once
+        const cleanNews = (Array.isArray(newsJson)?newsJson:[]).map(r => ({...r, seat_key: r.seat ? norm(String(r.seat).replace(/^N\.?\d+\s*/,"")) : null}));
+        setNews(cleanNews);
+        if(labelsJson && typeof labelsJson==="object"){ const l={...labelsJson}; delete l._comment; setStaticLabels(l); }
+        setMeta(metaJson);
+        setModel(m);
+        let start = m.elections.length-1;
+        while(start>0 && m.elections[start].pending) start--;
+        setIdx(start);
+        setStatus("ready");
+      })
+      .catch(err => { if(alive){ setErrMsg(err.message||String(err)); setStatus("error"); } });
+    return ()=>{ alive=false; };
+  }, []);
+
+  const elections = model ? model.elections : [];
+  const election  = elections[idx];
+
+  // keyboard ←/→ steps elections
+  useEffect(()=>{
+    const onKey = (e)=>{
+      if(e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+      if(e.key==="ArrowLeft"){ setPlaying(false); setIdx(i=>Math.max(0,i-1)); }
+      if(e.key==="ArrowRight"){ setPlaying(false); setIdx(i=>Math.min((model?model.elections.length:1)-1, i+1)); }
+    };
+    window.addEventListener("keydown", onKey);
+    return ()=>window.removeEventListener("keydown", onKey);
+  }, [model]);
+
+  // auto-advance
+  useEffect(()=>{
+    if(!playing || !model) return;
+    const t = setInterval(()=>{
+      setIdx(i=>{
+        let last = elections.length-1;
+        while(last>0 && elections[last].pending) last--;
+        if(i>=last){ setPlaying(false); return i; }
+        return i+1;
+      });
+    }, 1200);
+    return ()=>clearInterval(t);
+  }, [playing, model, elections]);
+
+  const seatsMap = model ? model.byElection[election.code].seats : new Map();
+  const pinnedSeat = (pinned && seatsMap.has(pinned)) ? seatsMap.get(pinned) : null;
+
+  // seats with seat-tagged news for the selected election (for map dots)
+  const newsSeats = useMemo(()=>{
+    if(!model) return new Set();
+    const s = new Set();
+    for(const r of news) if(r.election===election.code && r.seat_key) s.add(r.seat_key);
+    return s;
+  }, [news, model, election && election.code]);
+
+  const newsCountForElection = useMemo(
+    ()=> news.filter(r=>election && r.election===election.code).length,
+    [news, election && election.code]
+  );
+
+  const onHover = useCallback((e, seat)=> setTip({x:e.clientX, y:e.clientY, seat}), []);
+  const onLeave = useCallback(()=> setTip(null), []);
+  const onPin   = useCallback((code)=> setPinned(p => p===code ? null : code), []);
+  const step    = (d)=> { setPlaying(false); setIdx(i=> Math.max(0, Math.min(elections.length-1, i+d))); };
+
+  if(status==="loading")
+    return <div className="center-state"><div className="spinner"/><div>Loading Johor DUN results…</div></div>;
+  if(status==="error")
+    return <div className="center-state"><div className="errbox">
+      <b>Couldn’t load the data.</b><div style={{marginTop:8,fontSize:13}}>{errMsg}</div>
+      <div style={{marginTop:8,fontSize:12,color:"#b91c1c"}}>The app expects ./data/ballots_jhr.csv next to index.html.</div>
+    </div></div>;
+
+  const decidedLabel = view==="margin" ? "Margin over runner-up" : "Winning coalition";
+  const labels = { coalitions: model.coalitions, tags, available: tagsAvailable, addTag, vote, voted };
+
+  return (
+   <NamesContext.Provider value={nameOf}>
+    <div className="app">
+      <header className="bar">
+        <h1>The Johor Election App<small>DUN results 1959–{elections[elections.length-1].year} · ElectionData.MY</small></h1>
+
+        <div className="stepper">
+          <button onClick={()=>step(-1)} disabled={idx===0} aria-label="previous election">‹</button>
+          <div className="elabel"><b>{election.code}</b> <span className="yr">· {election.year}</span></div>
+          <button onClick={()=>step(1)} disabled={idx===elections.length-1} aria-label="next election">›</button>
+          <input type="range" min={0} max={elections.length-1} value={idx} aria-label="election selector"
+                 onChange={e=>{ setPlaying(false); setIdx(+e.target.value); }} />
+        </div>
+
+        <div className="seg" role="group" aria-label="map view">
+          <button className={view==="winner"?"on":""} onClick={()=>setView("winner")}>Winner</button>
+          <button className={view==="margin"?"on":""} onClick={()=>setView("margin")}>Margin</button>
+        </div>
+
+        <button className={"play"+(playing?" on":"")} onClick={()=>setPlaying(p=>!p)}
+                aria-label={playing?"pause auto-advance":"play through elections"}>
+          {playing ? "❚❚ Pause" : "▶ Play"}
+        </button>
+        <span className="kbd-hint">← / → step elections</span>
+        <div className="spacer"/>
+      </header>
+
+      <div className="main">
+        <div className="mapwrap">
+          <div className="maptitle">
+            <span>{election.pending ? "Results pending" : decidedLabel} — one hex ≈ one seat, ordered north→south</span>
+            <span>{seatsMap.size} seats</span>
+          </div>
+          {election.pending && <div className="pending-note">⏳ {election.year} — results pending</div>}
+          <HexMap election={election} seatsMap={seatsMap} view={view} newsSeats={newsSeats}
+                  pinned={pinned} onHover={onHover} onLeave={onLeave} onPin={onPin}/>
+        </div>
+
+        <div className="panel">
+          <h2>{pinnedSeat ? (pinnedSeat.code+" · "+pinnedSeat.name) : "Johor statewide"}</h2>
+          <div className="sub">{election.code} · {election.year}{election.pending?" · results pending":""}</div>
+          {pinnedSeat && <button className="backbtn" onClick={()=>setPinned(null)}>← Back to statewide</button>}
+
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={tab==="results"} className={tab==="results"?"on":""} onClick={()=>setTab("results")}>Results</button>
+            <button role="tab" aria-selected={tab==="coverage"} className={tab==="coverage"?"on":""} onClick={()=>setTab("coverage")}>
+              Coverage{newsCountForElection>0 && <span className="count">{newsCountForElection}</span>}
+            </button>
+            <button role="tab" aria-selected={tab==="about"} className={tab==="about"?"on":""} onClick={()=>setTab("about")}>About</button>
+          </div>
+
+          {tab==="results" && (pinnedSeat
+            ? <SeatDetail seat={pinnedSeat} election={election} elections={elections} timeline={model.timeline}/>
+            : <Statewide election={election} summary={model.summary[election.code]} view={view} coalitions={model.coalitions}/>)}
+          {tab==="coverage" && <Coverage election={election} news={news} pinnedSeat={pinnedSeat}/>}
+          {tab==="about" && <About meta={meta} newsCount={news.length} labels={labels}/>}
+        </div>
+      </div>
+
+      <footer className="credit">
+        Data: <a href="https://electiondata.my" target="_blank" rel="noopener noreferrer">ElectionData.MY</a> (CC0)
+        · Thevananthan (2025), <i>The Malaysian Election Corpus (MECo)</i>, Scientific Data
+        · News titles via page <code>&lt;title&gt;</code> tags &amp; Wayback Machine.
+      </footer>
+
+      <Tooltip data={tip}/>
+    </div>
+   </NamesContext.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this app or its news index, please cite the repository — and cite the underlying dataset (MECo) via the reference below."
+title: "The Johor Election App"
+type: software
+authors:
+  - name: "The Johor Election App contributors"
+repository-code: "https://github.com/vgnshlvnz/johor-election-app"
+url: "https://vgnshlvnz.github.io/johor-election-app/"
+license: BSD-3-Clause-Attribution
+abstract: >-
+  A single-page interactive hex-cartogram of Johor (Malaysia) state assembly
+  (DUN) election results from 1959 to the present, with an indexed archive of
+  verified news coverage. Built on The Malaysian Election Corpus (MECo).
+references:
+  - type: article
+    authors:
+      - family-names: Thevananthan
+        given-names: Thevesh
+    title: "The Malaysian Election Corpus (MECo): Federal and State-Level Election Results from 1955 to 2025"
+    journal: "Scientific Data"
+    year: 2025

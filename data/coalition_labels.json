@@ -1,0 +1,14 @@
+{
+  "_comment": "Static fallback coalition labels. Only names verifiable from the dataset's own party composition are included; codes without an entry (e.g. HAK) render as bare codes. Live crowd-labels from the tags API override these when available.",
+  "BN": "Barisan Nasional",
+  "PH": "Pakatan Harapan",
+  "PN": "Perikatan Nasional",
+  "PERIKATAN": "The Alliance (Perikatan)",
+  "PR": "Pakatan Rakyat",
+  "BA": "Barisan Alternatif",
+  "APU": "Angkatan Perpaduan Ummah",
+  "GS": "Gagasan Sejahtera",
+  "SF": "Socialist Front",
+  "GR": "Gagasan Rakyat",
+  "ALONE": "Independent"
+}

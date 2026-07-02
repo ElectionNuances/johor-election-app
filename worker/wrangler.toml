@@ -1,0 +1,10 @@
+name = "johor-election-tags"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Create the namespace first:
+#   wrangler kv namespace create TAGS
+# then paste the returned id below.
+[[kv_namespaces]]
+binding = "TAGS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
